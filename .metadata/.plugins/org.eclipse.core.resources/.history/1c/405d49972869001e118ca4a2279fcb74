@@ -1,0 +1,183 @@
+package com.examportal.services.implement;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+
+import com.examportal.exception.DataValidationException;
+import com.examportal.exception.GenericResponse;
+import com.examportal.model.exam.Question;
+import com.examportal.model.exam.QuestionDto;
+import com.examportal.model.exam.Quiz;
+import com.examportal.model.exam.QuizDto;
+import com.examportal.model.exam.UserActiveQuizDTO;
+import com.examportal.model.repo.QuizRepository;
+import com.examportal.services.QuizService;
+
+@Service
+public class QuizServiceImpl implements QuizService {
+	@Autowired
+	private QuizRepository quizRepository;
+
+	@Override
+	public GenericResponse addQuiz(Quiz quiz) throws Exception {
+		if (quiz.getTitle() == null || quiz.getTitle().isBlank()) {
+			throw new DataValidationException("Please enter Tital for Quiz");
+		} else {
+			quiz.setTitle(quiz.getTitle().trim());
+		}
+		Optional<Quiz> existingQuiz = quizRepository.findByTitle(quiz.getTitle());
+		if (existingQuiz.isPresent()) {
+			throw new DataValidationException("A quiz with the title '" + quiz.getTitle() + "' already exists.");
+		}
+
+		if (quiz.getQuestions() == null || quiz.getQuestions().isEmpty()) {
+			throw new DataValidationException("Please provide a list of questions for the quiz.");
+		}
+
+		if (quiz.getCategory() == null || quiz.getCategory().getId() == null) {
+			throw new DataValidationException("Please select a category for the quiz.");
+		}
+
+		for (Question question : quiz.getQuestions()) {
+			if (quiz.getQuestions().stream().filter(q -> q.equals(question)).count() > 1) {
+				throw new DataValidationException(
+						"Question with ID " + question.getId() + " is repeated within the same quiz.");
+			}
+
+			if (!question.getCategory().equals(quiz.getCategory())) {
+				throw new DataValidationException(
+						"Question with ID " + question.getId() + " does not belong to the specified category.");
+			}
+		}
+		quizRepository.save(quiz);
+		return new GenericResponse(201, "Created Succesfully");
+
+	}
+
+	@Override
+	public GenericResponse updateQuiz(Quiz quiz, Long quizId) {
+		Optional<Quiz> optionalQuiz = quizRepository.findById(quizId);
+		if (optionalQuiz.isEmpty()) {
+			throw new DataValidationException("Quiz with ID " + quizId + " not found.");
+		}
+		Quiz existingQuiz = optionalQuiz.get();
+		if (quiz.getTitle() == null || quiz.getTitle().isBlank()) {
+			throw new DataValidationException("Please enter a title for the quiz.");
+		} else {
+			quiz.setTitle(quiz.getTitle().trim());
+		}
+		Optional<Quiz> duplicateTitleQuiz = quizRepository.findByTitle(quiz.getTitle());
+		if (duplicateTitleQuiz.isPresent() && !duplicateTitleQuiz.get().getId().equals(quizId)) {
+			throw new DataValidationException("A quiz with the title '" + quiz.getTitle() + "' already exists.");
+		}
+
+		if (quiz.getQuestions() == null || quiz.getQuestions().isEmpty()) {
+			throw new DataValidationException("Please provide a list of questions for the quiz.");
+		}
+
+		if (quiz.getCategory() == null || quiz.getCategory().getId() == null) {
+			throw new DataValidationException("Please select a category for the quiz.");
+		}
+
+		for (Question question : quiz.getQuestions()) {
+			if (quiz.getQuestions().stream().filter(q -> q.equals(question)).count() > 1) {
+				throw new DataValidationException(
+						"Question with ID " + question.getId() + " is repeated within the same quiz.");
+			}
+
+			if (!question.getCategory().equals(quiz.getCategory())) {
+				throw new DataValidationException(
+						"Question with ID " + question.getId() + " does not belong to the specified category.");
+			}
+		}
+
+		existingQuiz.setTitle(quiz.getTitle());
+		existingQuiz.setQuestions(quiz.getQuestions());
+		existingQuiz.setCategory(quiz.getCategory());
+
+		quizRepository.save(existingQuiz);
+
+		return new GenericResponse(202, "Updated Successfully");
+	}
+
+	@Override
+	public Page<Quiz> getQuizzes(int page, int size) {
+		Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
+		Page<Quiz> quiz;
+
+		quiz = quizRepository.findAll(pageable);
+
+		return quiz;
+	}
+
+	@Override
+	public Quiz getQuiz(Long quizId) {
+		Optional<Quiz> quizoptional = quizRepository.findById(quizId);
+		if (quizoptional.isEmpty()) {
+			throw new DataValidationException("Quiz with ID " + quizId + " not found.");
+
+		}
+		return this.quizRepository.findById(quizId).get();
+	}
+
+	@Override
+	public GenericResponse changeQuizStatus(Long quizId, boolean newStatus) {
+	    Optional<Quiz> optionalQuiz = quizRepository.findById(quizId);
+
+	    if (optionalQuiz.isPresent()) {
+	        Quiz quiz = optionalQuiz.get();
+	        quiz.setActive(newStatus); 
+	        quizRepository.save(quiz);
+	        return new GenericResponse(200, "Quiz status updated  successfully.");
+	    }
+	    	throw new DataValidationException("Id Not Found");
+	}
+
+	@Override
+	public List<UserActiveQuizDTO> getUserActiveQuizzes() {
+		List<Quiz> activeQuizzes = quizRepository.findByIsActive(true);
+
+		List<UserActiveQuizDTO> userActiveQuizzes = new ArrayList<>();
+		for (Quiz quiz : activeQuizzes) {
+			UserActiveQuizDTO dto = new UserActiveQuizDTO();
+			dto.setId(quiz.getId());
+			dto.setTitle(quiz.getTitle());
+			dto.setDescription(quiz.getDescription());
+			userActiveQuizzes.add(dto);
+		}
+
+		return userActiveQuizzes;
+	}
+	
+	@Override
+	public QuizDto convertQuizToQuizDto(Quiz quiz) {
+		QuizDto quizDto = new QuizDto();
+		quizDto.setId(quiz.getId());
+		quizDto.setTitle(quiz.getTitle());
+		quizDto.setDescription(quiz.getDescription());
+
+		List<QuestionDto> questionDtos = new ArrayList<>();
+		for (Question question : quiz.getQuestions()) {
+			QuestionDto questionDto = new QuestionDto(question.getId(), question.getContent(), question.getOption1(),
+					question.getOption2(), question.getOption3(), question.getOption4()
+
+			);
+			questionDtos.add(questionDto);
+		}
+
+		quizDto.setQuestions(questionDtos);
+
+		return quizDto;
+
+	}
+	
+
+}

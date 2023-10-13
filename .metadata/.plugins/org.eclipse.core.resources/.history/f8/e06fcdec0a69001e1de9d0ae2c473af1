@@ -1,0 +1,5 @@
+package com.examportal.model.exam;
+
+public class Category {
+
+}
